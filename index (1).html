@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bakery POS & Stock Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style id="thermal-receipt-styles">
+    @media print {
+      body > *:not(#receipt-print-modal) {
+        display: none !important;
+      }
+      #receipt-print-modal {
+        position: static !important;
+        display: block !important;
+        background: #fff !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      #receipt-modal-backdrop {
+        display: none !important;
+      }
+      #receipt-sheet {
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        width: 58mm !important;
+        max-width: 58mm !important;
+        margin: 0 auto !important;
+        padding: 2mm !important;
+        font-family: 'Courier New', Courier, monospace !important;
+        font-size: 11px !important;
+        line-height: 1.35 !important;
+        color: #000 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      @page {
+        margin: 2mm;
+      }
+    }
+  </style>
+
+</head>
+<body class="bg-amber-50/70 text-slate-800 font-sans min-h-screen flex flex-col">
+
+  
+  <!-- Thermal Receipt Print Modal (58mm / 80mm POS Printer Ready) -->
+  <div id="receipt-print-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div id="receipt-modal-backdrop" onclick="closeReceiptModal()" class="fixed inset-0 bg-slate-900/60"></div>
+    <div class="relative z-10 flex flex-col items-center max-h-[92vh] overflow-y-auto w-full max-w-sm">
+      <div id="receipt-sheet" class="bg-white text-slate-900 rounded-2xl shadow-2xl border border-amber-200 w-full max-w-[300px] p-4 font-mono text-xs leading-relaxed">
+        <div class="text-center border-b border-dashed border-slate-400 pb-2.5 mb-2.5">
+          <div class="text-sm font-extrabold tracking-wide uppercase">Bakery POS</div>
+          <div class="text-[11px] text-slate-600">Customer Receipt / බිල්පත</div>
+          <div id="rcpt-meta" class="text-[10px] text-slate-500 mt-1"></div>
+        </div>
+
+        <div id="rcpt-lines" class="space-y-1.5 border-b border-dashed border-slate-400 pb-2.5 mb-2.5"></div>
+
+        <div class="space-y-1 text-xs">
+          <div class="flex justify-between font-extrabold text-sm">
+            <span>TOTAL</span>
+            <span id="rcpt-total">Rs. 0</span>
+          </div>
+          <div class="flex justify-between text-slate-700">
+            <span>Cash Received</span>
+            <span id="rcpt-cash">Rs. 0</span>
+          </div>
+          <div class="flex justify-between font-bold text-slate-900">
+            <span>Balance</span>
+            <span id="rcpt-balance">Rs. 0</span>
+          </div>
+        </div>
+
+        <div class="border-t border-dashed border-slate-400 mt-3 pt-2.5 text-center text-[10px] text-slate-600">
+          Thank you! Come again.<br />
+          ස්තූතියි! නැවත එන්න.
+        </div>
+      </div>
+
+      <div class="no-print flex items-center gap-2 mt-3 w-full max-w-[300px]">
+        <button type="button" onclick="closeReceiptModal()"
+          class="w-1/3 py-2.5 rounded-xl bg-white text-slate-700 font-semibold text-xs border border-slate-300 hover:bg-slate-50">
+          Close
+        </button>
+        <button type="button" onclick="triggerReceiptPrint()"
+          class="w-2/3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md">
+          🖨 Print Bill
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Banner -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
+
+  <!-- PIN Modal (Unlock / Change PIN / Reset PIN with Current PIN) -->
+  <div id="pin-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/60 p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-amber-200 max-w-sm w-full p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 id="pin-modal-title" class="text-lg font-bold text-slate-900">Owner PIN Required</h2>
+        <button type="button" onclick="closePinModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold leading-none">&times;</button>
+      </div>
+      <p id="pin-modal-desc" class="text-sm text-slate-600 mb-4">
+        Enter the 4-digit Owner PIN to unlock Owner Mode.
+      </p>
+
+      <div id="pin-current-wrap" class="hidden mb-3">
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Current 4-Digit PIN</label>
+        <input id="pin-input-current" type="password" inputmode="numeric" maxlength="4" placeholder="••••"
+          class="w-full px-3.5 py-2 text-center tracking-[0.5em] text-lg font-bold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+      </div>
+
+      <div id="pin-new-wrap" class="space-y-3 mb-4">
+        <div id="pin-first-wrap">
+          <label id="pin-label-1" class="block text-xs font-semibold text-slate-600 mb-1">4-Digit PIN</label>
+          <input id="pin-input-1" type="password" inputmode="numeric" maxlength="4" placeholder="••••"
+            class="w-full px-3.5 py-2 text-center tracking-[0.5em] text-lg font-bold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        </div>
+        <div id="pin-confirm-wrap" class="hidden">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Confirm New 4-Digit PIN</label>
+          <input id="pin-input-2" type="password" inputmode="numeric" maxlength="4" placeholder="••••"
+            class="w-full px-3.5 py-2 text-center tracking-[0.5em] text-lg font-bold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        </div>
+      </div>
+
+      <p id="pin-error-msg" class="text-xs text-red-600 font-medium mb-3 hidden"></p>
+
+      <div class="flex items-center justify-end gap-2">
+        <button type="button" onclick="closePinModal()"
+          class="px-3.5 py-2 text-sm font-medium rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">
+          Cancel
+        </button>
+        <button id="pin-submit-btn" type="button" onclick="handlePinSubmit()"
+          class="px-4 py-2 text-sm font-semibold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition">
+          Unlock
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Header -->
+  <header class="bg-amber-700 text-white shadow-md">
+    <div class="max-w-6xl mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-500/30 flex items-center justify-center text-xl">🥐</div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg sm:text-xl font-bold tracking-tight">Bakery POS & Stock</h1>
+            <span id="mode-badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-900/50 text-amber-100">
+              Cashier Mode
+            </span>
+          </div>
+          <p id="current-date-label" class="text-xs text-amber-100/90"></p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btn-change-pin" type="button" onclick="openChangePinModal()"
+          class="hidden px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-xl bg-amber-800/80 hover:bg-amber-900 border border-amber-400/30 transition">
+          Change PIN
+        </button>
+        <button id="btn-reset-pin-header" type="button" onclick="openResetPinModal()"
+          class="hidden px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-xl bg-red-600/90 hover:bg-red-700 text-white transition">
+          Reset PIN
+        </button>
+        <button id="btn-lock-toggle" type="button" onclick="handleModeButtonClick()"
+          class="px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-xl bg-white text-amber-900 hover:bg-amber-50 transition">
+          Unlock Owner Mode
+        </button>
+        <button id="btn-start-new-day" type="button" onclick="handleStartNewDay()"
+          class="hidden px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-xl bg-amber-950/70 hover:bg-amber-950 text-amber-100 border border-amber-400/30 transition">
+          Start New Day
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Summary KPI Cards -->
+  <section class="max-w-6xl w-full mx-auto px-4 pt-4">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div class="bg-white rounded-2xl p-4 border border-amber-200/80">
+        <p class="text-xs font-semibold text-slate-500 uppercase">Total Cash</p>
+        <p id="kpi-total-cash" class="text-xl sm:text-2xl font-extrabold text-emerald-700 mt-1">Rs. 0</p>
+        <p id="kpi-cash-note" class="text-[11px] text-slate-400 mt-0.5">Hidden in Cashier Mode</p>
+      </div>
+      <div class="bg-white rounded-2xl p-4 border border-amber-200/80">
+        <p class="text-xs font-semibold text-slate-500 uppercase">Remaining Stock</p>
+        <p id="kpi-remaining" class="text-xl sm:text-2xl font-extrabold text-amber-700 mt-1">0 pcs</p>
+        <p class="text-[11px] text-slate-400 mt-0.5">Stock In - Sold</p>
+      </div>
+      <div class="bg-white rounded-2xl p-4 border border-amber-200/80">
+        <p class="text-xs font-semibold text-slate-500 uppercase">Sold Qty</p>
+        <p id="kpi-sold" class="text-xl sm:text-2xl font-extrabold text-slate-800 mt-1">0 pcs</p>
+        <p class="text-[11px] text-slate-400 mt-0.5">Completed bills</p>
+      </div>
+      <div class="bg-white rounded-2xl p-4 border border-amber-200/80">
+        <p class="text-xs font-semibold text-slate-500 uppercase">Added Stock</p>
+        <p id="kpi-added" class="text-xl sm:text-2xl font-extrabold text-slate-800 mt-1">0 pcs</p>
+        <p class="text-[11px] text-slate-400 mt-0.5">Total stock in today</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Navigation Tabs -->
+  <nav class="max-w-6xl w-full mx-auto px-4 pt-4">
+    <div class="flex gap-2 overflow-x-auto pb-1">
+      <button id="tab-sale" type="button" onclick="switchTab('sale')"
+        class="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-600 text-white whitespace-nowrap">
+        Sale / Bill
+      </button>
+      <button id="tab-stock" type="button" onclick="switchTab('stock')"
+        class="px-4 py-2 rounded-xl text-sm font-semibold bg-white text-slate-700 hover:bg-amber-100/60 border border-amber-200 whitespace-nowrap">
+        🔒 Stock In
+      </button>
+      <button id="tab-items" type="button" onclick="switchTab('items')"
+        class="px-4 py-2 rounded-xl text-sm font-semibold bg-white text-slate-700 hover:bg-amber-100/60 border border-amber-200 whitespace-nowrap">
+        🔒 Items & Price
+      </button>
+      <button id="tab-summary" type="button" onclick="switchTab('summary')"
+        class="px-4 py-2 rounded-xl text-sm font-semibold bg-white text-slate-700 hover:bg-amber-100/60 border border-amber-200 whitespace-nowrap">
+        🔒 Summary & Logs
+      </button>
+      <button id="tab-history" type="button" onclick="switchTab('history')"
+        class="px-4 py-2 rounded-xl text-sm font-semibold bg-white text-slate-700 hover:bg-amber-100/60 border border-amber-200 whitespace-nowrap">
+        🔒 Past Bills History
+      </button>
+    </div>
+  </nav>
+
+  <!-- Main Content Area -->
+  <main class="max-w-6xl w-full mx-auto px-4 py-4 flex-1">
+    <!-- TAB 1: SALE / BILL -->
+    <div id="view-sale" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2">
+        <div id="items-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+      </div>
+
+      <div class="bg-white rounded-2xl p-4 border border-amber-200 h-fit">
+        <h2 class="text-base font-bold text-slate-900 mb-3">Current Bill (බිල්පත)</h2>
+        <div id="bill-items-list" class="divide-y divide-slate-100 max-h-64 overflow-y-auto mb-3 text-sm">
+          <p class="text-slate-400 text-center py-6">No items selected yet</p>
+        </div>
+
+        <div class="border-t border-slate-200 pt-3 space-y-2.5 text-sm">
+          <div class="flex justify-between font-bold text-base text-slate-900">
+            <span>Bill Total</span>
+            <span id="bill-total">Rs. 0</span>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Cash Received (ලැබුණු මුදල - Rs.)</label>
+            <input id="cash-received-input" type="number" min="0" step="1" oninput="updateBalanceDisplay()" placeholder="0"
+              class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold" />
+          </div>
+
+          <div class="flex justify-between font-semibold text-emerald-700">
+            <span>Balance / Change (ඉතිරිය)</span>
+            <span id="bill-balance">Rs. 0</span>
+          </div>
+
+          <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none pt-0.5">
+            <input id="auto-print-bill-checkbox" type="checkbox" checked
+              class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+            <span>Show & Print Receipt after Sale (බිල්පත Print කරන්න)</span>
+          </label>
+
+          <div class="flex gap-2 pt-1">
+            <button type="button" onclick="clearCurrentBill()"
+              class="w-1/3 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition">
+              Clear
+            </button>
+            <button type="button" onclick="completeSale()"
+              class="w-2/3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition">
+              Complete Sale
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: STOCK IN (+ / - Controls & + Add New Item) -->
+    <div id="view-stock" class="hidden space-y-5">
+      <div class="bg-white rounded-2xl p-5 border border-amber-200">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">Add New Item (අලුත් කෑමක් එක් කරන්න)</h2>
+            <p class="text-xs text-slate-500">Enter English name, Sinhala name, unit price, and opening stock.</p>
+          </div>
+          <button type="button" onclick="toggleAddItemForm()" id="btn-toggle-add-item"
+            class="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs sm:text-sm font-semibold">
+            + Add New Item
+          </button>
+        </div>
+
+        <form id="stock-add-item-form" onsubmit="handleAddItem(event)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">English Name</label>
+            <input id="new-item-en" type="text" required placeholder="e.g. Pol Roti"
+              class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Sinhala Name (සිංහල නම)</label>
+            <input id="new-item-si" type="text" required placeholder="උදා: පොල් රොටී"
+              class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Price (Rs.)</label>
+            <input id="new-item-price" type="number" min="1" step="1" required placeholder="100"
+              class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Opening Stock (pcs)</label>
+            <input id="new-item-stock" type="number" min="0" step="1" value="10"
+              class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm" />
+          </div>
+          <div class="flex items-end">
+            <button type="submit" class="w-full px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">
+              + Save Item
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="bg-white rounded-2xl p-5 border border-amber-200">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 class="text-lg font-bold text-slate-900">Quick Stock In / Out (+ / -)</h3>
+            <p class="text-xs text-slate-500">Tap + or - to adjust stock by step quantity immediately.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-xs font-semibold text-slate-600">Step Qty:</label>
+            <input id="stock-step-input" type="number" min="1" step="1" value="1"
+              class="w-20 px-2.5 py-1.5 rounded-xl border border-slate-300 text-sm font-bold text-center" />
+          </div>
+        </div>
+        <div id="stock-stepper-list" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+      </div>
+    </div>
+
+    <!-- TAB 3: ITEMS & PRICE (OWNER) -->
+    <div id="view-items" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl p-5 border border-amber-200 overflow-x-auto">
+        <h3 class="text-base font-bold text-slate-900 mb-3">Manage Items, Bilingual Names & Prices</h3>
+        <table class="w-full text-sm text-left">
+          <thead class="border-b text-xs uppercase text-slate-500">
+            <tr>
+              <th class="py-2 pr-3">Item (EN / SI)</th>
+              <th class="py-2 px-3">Price (Rs.)</th>
+              <th class="py-2 px-3">Stock In</th>
+              <th class="py-2 px-3">Sold</th>
+              <th class="py-2 px-3">Remaining</th>
+              <th class="py-2 pl-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="manage-items-tbody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 4: SUMMARY & LOGS (OWNER) -->
+    <div id="view-summary" class="hidden bg-white rounded-2xl p-5 border border-amber-200">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h2 class="text-lg font-bold text-slate-900">Today's Sales & Stock Logs</h2>
+        <span id="log-count-badge" class="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">0 entries</span>
+      </div>
+      <div id="logs-list" class="space-y-2 max-h-96 overflow-y-auto text-sm"></div>
+    </div>
+
+    <!-- TAB 5: PAST BILLS HISTORY (OWNER PIN PROTECTED) -->
+    <div id="view-history" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl p-5 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">Past Days & Completed Bills History</h2>
+          <p class="text-xs text-slate-500">Owner-only archive of completed bills and closed daily summaries. Delete unwanted bills or export CSV.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" onclick="downloadHistoryCSV()"
+            class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold">
+            ⬇ Download Bills CSV
+          </button>
+          <button type="button" onclick="clearAllPastBills()"
+            class="px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs sm:text-sm font-semibold">
+            🗑 Clear All Bills
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl p-5 border border-amber-200 overflow-x-auto">
+        <h3 class="text-base font-bold text-slate-900 mb-3">Completed Bills Log</h3>
+        <table class="w-full text-sm text-left">
+          <thead class="border-b text-xs uppercase text-slate-500">
+            <tr>
+              <th class="py-2 pr-3">Date & Time</th>
+              <th class="py-2 px-3">Bill ID</th>
+              <th class="py-2 px-3">Items</th>
+              <th class="py-2 px-3">Total (Rs.)</th>
+              <th class="py-2 px-3">Cash / Balance</th>
+              <th class="py-2 pl-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="bills-history-tbody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+
+      <div class="bg-white rounded-2xl p-5 border border-amber-200">
+        <h3 class="text-base font-bold text-slate-900 mb-3">Archived Day Summaries</h3>
+        <div id="day-archives-list" class="space-y-2 text-sm"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'bakery_pos_v4_data';
+    const PIN_KEY = 'bakery_pos_v4_pin';
+    const DEFAULT_PIN = '1234';
+
+    const DEFAULT_ITEMS = [
+      { id: 'paan', nameEn: 'Paan / Roast Bread', nameSi: 'පාන්', price: 150, stockIn: 30, sold: 0 },
+      { id: 'fish-bun', nameEn: 'Fish Bun', nameSi: 'මාළු බනිස්', price: 100, stockIn: 25, sold: 0 },
+      { id: 'sausage-bun', nameEn: 'Sausage Bun', nameSi: 'සොසේජ් බනිස්', price: 120, stockIn: 20, sold: 0 },
+      { id: 'egg-bun', nameEn: 'Egg Bun', nameSi: 'බිත්තර බනිස්', price: 130, stockIn: 15, sold: 0 },
+      { id: 'tea-bun', nameEn: 'Tea Bun', nameSi: 'ටී බනිස්', price: 80, stockIn: 25, sold: 0 },
+      { id: 'chicken-roll', nameEn: 'Chicken Roll', nameSi: 'චිකන් රෝල්', price: 140, stockIn: 20, sold: 0 }
+    ];
+
+    function formatItemLabel(item) {
+      const en = item.nameEn || item.name || 'Item';
+      const si = item.nameSi || '';
+      return si ? en + ' / ' + si : en;
+    }
+
+    function createDefaultState() {
+      return {
+        items: DEFAULT_ITEMS.map(function (i) { return Object.assign({}, i); }),
+        totalCash: 0,
+        logs: [],
+        bills: [],
+        dayArchives: []
+      };
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+            return {
+              items: parsed.items,
+              totalCash: Number(parsed.totalCash) || 0,
+              logs: Array.isArray(parsed.logs) ? parsed.logs : [],
+              bills: Array.isArray(parsed.bills) ? parsed.bills : [],
+              dayArchives: Array.isArray(parsed.dayArchives) ? parsed.dayArchives : []
+            };
+          }
+        }
+      } catch (e) {}
+      return createDefaultState();
+    }
+
+    let state = loadState();
+    let ownerPin = localStorage.getItem(PIN_KEY) || DEFAULT_PIN;
+    let isOwnerUnlocked = false;
+    let activeTab = 'sale';
+    let currentBill = {};
+    let pinModalMode = 'unlock';
+    let pendingTabAfterUnlock = null;
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function showToast(message, type) {
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      const colors = {
+        success: 'bg-emerald-700 text-white',
+        error: 'bg-red-700 text-white',
+        info: 'bg-slate-900 text-white'
+      };
+      el.className = (colors[type] || colors.info) + ' px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium';
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(function () { el.remove(); }, 2800);
+    }
+
+    function renderHeaderAndKPIs() {
+      document.getElementById('current-date-label').textContent = new Date().toLocaleDateString('en-US', {
+        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+      });
+
+      const badge = document.getElementById('mode-badge');
+      const btnLock = document.getElementById('btn-lock-toggle');
+      const btnChangePin = document.getElementById('btn-change-pin');
+      const btnResetPinHeader = document.getElementById('btn-reset-pin-header');
+      const btnStartNewDay = document.getElementById('btn-start-new-day');
+
+      if (isOwnerUnlocked) {
+        badge.textContent = 'Owner Mode';
+        badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500 text-white';
+        btnLock.textContent = 'Lock Cashier Mode';
+        btnChangePin.classList.remove('hidden');
+        btnResetPinHeader.classList.remove('hidden');
+        btnStartNewDay.classList.remove('hidden');
+      } else {
+        badge.textContent = 'Cashier Mode';
+        badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-900/50 text-amber-100';
+        btnLock.textContent = 'Unlock Owner Mode';
+        btnChangePin.classList.add('hidden');
+        btnResetPinHeader.classList.add('hidden');
+        btnStartNewDay.classList.add('hidden');
+      }
+
+      const cashEl = document.getElementById('kpi-total-cash');
+      const cashNote = document.getElementById('kpi-cash-note');
+      if (isOwnerUnlocked) {
+        cashEl.textContent = 'Rs. ' + Number(state.totalCash || 0).toLocaleString();
+        cashNote.textContent = 'Owner view active';
+      } else {
+        cashEl.textContent = '••••';
+        cashNote.textContent = 'Unlock Owner Mode to view';
+      }
+
+      let added = 0;
+      let sold = 0;
+      let remaining = 0;
+      state.items.forEach(function (item) {
+        const sIn = Number(item.stockIn) || 0;
+        const sOut = Number(item.sold) || 0;
+        added += sIn;
+        sold += sOut;
+        remaining += Math.max(0, sIn - sOut);
+      });
+
+      document.getElementById('kpi-remaining').textContent = remaining + ' pcs';
+      document.getElementById('kpi-sold').textContent = sold + ' pcs';
+      document.getElementById('kpi-added').textContent = added + ' pcs';
+
+      const lockIcon = isOwnerUnlocked ? '' : '🔒 ';
+      document.getElementById('tab-stock').textContent = lockIcon + 'Stock In';
+      document.getElementById('tab-items').textContent = lockIcon + 'Items & Price';
+      document.getElementById('tab-summary').textContent = lockIcon + 'Summary & Logs';
+      document.getElementById('tab-history').textContent = lockIcon + 'Past Bills History';
+    }
+
+    function handleModeButtonClick() {
+      if (isOwnerUnlocked) {
+        isOwnerUnlocked = false;
+        if (activeTab !== 'sale') switchTab('sale');
+        renderAll();
+        showToast('Locked to Cashier Mode', 'info');
+      } else {
+        openUnlockPinModal(null);
+      }
+    }
+
+    function openUnlockPinModal(targetTab) {
+      pinModalMode = 'unlock';
+      pendingTabAfterUnlock = targetTab;
+      document.getElementById('pin-modal-title').textContent = 'Owner PIN Required';
+      document.getElementById('pin-modal-desc').textContent =
+        'Enter your 4-digit Owner PIN to unlock Owner Mode.';
+      document.getElementById('pin-current-wrap').classList.add('hidden');
+      document.getElementById('pin-first-wrap').classList.remove('hidden');
+      document.getElementById('pin-label-1').textContent = 'Enter 4-Digit PIN';
+      document.getElementById('pin-confirm-wrap').classList.add('hidden');
+      document.getElementById('pin-submit-btn').textContent = 'Unlock';
+      clearPinInputs();
+      showPinModal();
+    }
+
+    function openChangePinModal() {
+      if (!isOwnerUnlocked) return openUnlockPinModal(null);
+      pinModalMode = 'change';
+      document.getElementById('pin-modal-title').textContent = 'Change Owner PIN';
+      document.getElementById('pin-modal-desc').textContent =
+        'Enter your current PIN first, then enter and confirm your new 4-digit PIN.';
+      document.getElementById('pin-current-wrap').classList.remove('hidden');
+      document.getElementById('pin-first-wrap').classList.remove('hidden');
+      document.getElementById('pin-label-1').textContent = 'New 4-Digit PIN';
+      document.getElementById('pin-confirm-wrap').classList.remove('hidden');
+      document.getElementById('pin-submit-btn').textContent = 'Save New PIN';
+      clearPinInputs();
+      showPinModal();
+    }
+
+    function openResetPinModal() {
+      if (!isOwnerUnlocked) return openUnlockPinModal(null);
+      pinModalMode = 'reset';
+      document.getElementById('pin-modal-title').textContent = 'Reset Owner PIN to 1234';
+      document.getElementById('pin-modal-desc').textContent =
+        'Enter your existing 4-digit PIN to confirm resetting PIN back to default (1234).';
+      document.getElementById('pin-current-wrap').classList.remove('hidden');
+      document.getElementById('pin-first-wrap').classList.add('hidden');
+      document.getElementById('pin-confirm-wrap').classList.add('hidden');
+      document.getElementById('pin-submit-btn').textContent = 'Confirm Reset';
+      clearPinInputs();
+      showPinModal();
+    }
+
+    function clearPinInputs() {
+      document.getElementById('pin-input-current').value = '';
+      document.getElementById('pin-input-1').value = '';
+      document.getElementById('pin-input-2').value = '';
+      document.getElementById('pin-error-msg').classList.add('hidden');
+    }
+
+    function showPinModal() {
+      const modal = document.getElementById('pin-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      const focusTarget = !document.getElementById('pin-current-wrap').classList.contains('hidden')
+        ? 'pin-input-current'
+        : 'pin-input-1';
+      setTimeout(function () { document.getElementById(focusTarget).focus(); }, 50);
+    }
+
+    function closePinModal() {
+      const modal = document.getElementById('pin-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      pendingTabAfterUnlock = null;
+    }
+
+    function showPinError(msg) {
+      const err = document.getElementById('pin-error-msg');
+      err.textContent = msg;
+      err.classList.remove('hidden');
+    }
+
+    function handlePinSubmit() {
+      const currentEntered = document.getElementById('pin-input-current').value.trim();
+      const p1 = document.getElementById('pin-input-1').value.trim();
+      const p2 = document.getElementById('pin-input-2').value.trim();
+
+      if (pinModalMode === 'unlock') {
+        if (p1 === ownerPin) {
+          isOwnerUnlocked = true;
+          const nextTab = pendingTabAfterUnlock;
+          closePinModal();
+          if (nextTab) activeTab = nextTab;
+          renderAll();
+          showToast('Owner Mode unlocked', 'success');
+        } else {
+          showPinError('Incorrect PIN.');
+        }
+      } else if (pinModalMode === 'change') {
+        if (currentEntered !== ownerPin) {
+          showPinError('Current PIN is incorrect.');
+          return;
+        }
+        if (!/^\d{4}$/.test(p1)) {
+          showPinError('New PIN must be exactly 4 digits (0-9).');
+          return;
+        }
+        if (p1 !== p2) {
+          showPinError('New PIN and Confirm PIN do not match.');
+          return;
+        }
+        ownerPin = p1;
+        localStorage.setItem(PIN_KEY, ownerPin);
+        closePinModal();
+        showToast('Owner PIN updated successfully!', 'success');
+      } else if (pinModalMode === 'reset') {
+        if (currentEntered !== ownerPin) {
+          showPinError('Current PIN is incorrect. Cannot reset PIN.');
+          return;
+        }
+        ownerPin = DEFAULT_PIN;
+        localStorage.setItem(PIN_KEY, DEFAULT_PIN);
+        closePinModal();
+        showToast('PIN reset to 1234', 'success');
+      }
+    }
+
+    function switchTab(tabName) {
+      const ownerOnlyTabs = ['stock', 'items', 'summary', 'history'];
+      if (ownerOnlyTabs.indexOf(tabName) !== -1 && !isOwnerUnlocked) {
+        openUnlockPinModal(tabName);
+        return;
+      }
+      activeTab = tabName;
+      ['sale', 'stock', 'items', 'summary', 'history'].forEach(function (t) {
+        document.getElementById('view-' + t).classList.toggle('hidden', t !== tabName);
+        const btn = document.getElementById('tab-' + t);
+        if (t === tabName) {
+          btn.className = 'px-4 py-2 rounded-xl text-sm font-semibold bg-amber-600 text-white whitespace-nowrap';
+        } else {
+          btn.className = 'px-4 py-2 rounded-xl text-sm font-semibold bg-white text-slate-700 hover:bg-amber-100/60 border border-amber-200 whitespace-nowrap';
+        }
+      });
+      renderAll();
+    }
+
+    function getRemaining(item) {
+      return Math.max(0, (Number(item.stockIn) || 0) - (Number(item.sold) || 0));
+    }
+
+    function renderSaleGrid() {
+      const grid = document.getElementById('items-grid');
+      grid.innerHTML = '';
+      state.items.forEach(function (item) {
+        const rem = getRemaining(item);
+        const inBill = currentBill[item.id] || 0;
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.disabled = rem <= 0;
+        card.onclick = function () { addItemToBill(item.id); };
+        card.className = 'text-left p-4 rounded-2xl border transition flex flex-col justify-between ' + (
+          rem > 0
+            ? 'bg-white border-amber-200 hover:border-amber-500 cursor-pointer'
+            : 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed'
+        );
+        card.innerHTML =
+          '<div class="flex items-start justify-between gap-2">' +
+            '<span class="text-xs font-bold px-2 py-0.5 rounded-full ' + (rem > 0 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-700') + '">' +
+              rem + ' left' +
+            '</span>' +
+            (inBill > 0 ? '<span class="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">' + inBill + ' in bill</span>' : '') +
+          '</div>' +
+          '<div class="mt-3">' +
+            '<div class="font-bold text-slate-900">' + escapeHtml(item.nameEn || item.name || '') + '</div>' +
+            (item.nameSi ? '<div class="text-xs font-semibold text-amber-900/80">' + escapeHtml(item.nameSi) + '</div>' : '') +
+            '<div class="text-sm font-extrabold text-amber-700 mt-1">Rs. ' + Number(item.price).toLocaleString() + '</div>' +
+          '</div>';
+        grid.appendChild(card);
+      });
+    }
+
+    function addItemToBill(itemId) {
+      const item = state.items.find(function (i) { return i.id === itemId; });
+      if (!item) return;
+      const rem = getRemaining(item);
+      const currentQty = currentBill[itemId] || 0;
+      if (currentQty >= rem) {
+        showToast('Only ' + rem + ' pcs available for ' + formatItemLabel(item), 'error');
+        return;
+      }
+      currentBill[itemId] = currentQty + 1;
+      renderBill();
+      renderSaleGrid();
+    }
+
+    function changeBillQty(itemId, delta) {
+      const item = state.items.find(function (i) { return i.id === itemId; });
+      if (!item) return;
+      const rem = getRemaining(item);
+      const nextQty = (currentBill[itemId] || 0) + delta;
+      if (nextQty <= 0) {
+        delete currentBill[itemId];
+      } else if (nextQty > rem) {
+        showToast('Max available stock is ' + rem + ' pcs', 'error');
+        return;
+      } else {
+        currentBill[itemId] = nextQty;
+      }
+      renderBill();
+      renderSaleGrid();
+    }
+
+    function clearCurrentBill() {
+      currentBill = {};
+      document.getElementById('cash-received-input').value = '';
+      renderBill();
+      renderSaleGrid();
+    }
+
+    function getBillTotal() {
+      let total = 0;
+      Object.keys(currentBill).forEach(function (id) {
+        const qty = currentBill[id];
+        const item = state.items.find(function (i) { return i.id === id; });
+        if (item) total += (Number(item.price) || 0) * qty;
+      });
+      return total;
+    }
+
+    function updateBalanceDisplay() {
+      const total = getBillTotal();
+      const received = Number(document.getElementById('cash-received-input').value) || 0;
+      const balance = Math.max(0, received - total);
+      document.getElementById('bill-balance').textContent = 'Rs. ' + balance.toLocaleString();
+    }
+
+    function renderBill() {
+      const list = document.getElementById('bill-items-list');
+      const ids = Object.keys(currentBill);
+      if (ids.length === 0) {
+        list.innerHTML = '<p class="text-slate-400 text-center py-6">No items selected yet</p>';
+      } else {
+        list.innerHTML = ids.map(function (id) {
+          const qty = currentBill[id];
+          const item = state.items.find(function (i) { return i.id === id; });
+          if (!item) return '';
+          const lineTotal = (Number(item.price) || 0) * qty;
+          return (
+            '<div class="py-2 flex items-center justify-between gap-2">' +
+              '<div>' +
+                '<div class="font-semibold text-slate-800">' + escapeHtml(formatItemLabel(item)) + '</div>' +
+                '<div class="text-xs text-slate-500">Rs. ' + Number(item.price) + ' x ' + qty + ' = Rs. ' + lineTotal.toLocaleString() + '</div>' +
+              '</div>' +
+              '<div class="flex items-center gap-1.5">' +
+                '<button type="button" onclick="changeBillQty(\'' + id + '\', -1)" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold">-</button>' +
+                '<span class="w-5 text-center font-bold">' + qty + '</span>' +
+                '<button type="button" onclick="changeBillQty(\'' + id + '\', 1)" class="w-7 h-7 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold">+</button>' +
+              '</div>' +
+            '</div>'
+          );
+        }).join('');
+      }
+      const total = getBillTotal();
+      document.getElementById('bill-total').textContent = 'Rs. ' + total.toLocaleString();
+      updateBalanceDisplay();
+    }
+
+    function completeSale() {
+      const ids = Object.keys(currentBill);
+      if (ids.length === 0) {
+        showToast('Add at least one item to the bill', 'error');
+        return;
+      }
+
+      let billTotal = 0;
+      const summaryParts = [];
+
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const qty = currentBill[id];
+        const item = state.items.find(function (it) { return it.id === id; });
+        if (!item) continue;
+        if (qty > getRemaining(item)) {
+          showToast('Insufficient stock for ' + formatItemLabel(item), 'error');
+          return;
+        }
+        const unitPrice = Number(item.price) || 0;
+        billTotal += unitPrice * qty;
+        summaryParts.push(formatItemLabel(item) + ' x' + qty);
+      }
+
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const qty = currentBill[id];
+        const item = state.items.find(function (it) { return it.id === id; });
+        if (item) item.sold = (Number(item.sold) || 0) + qty;
+      }
+
+      const cashReceivedInput = document.getElementById('cash-received-input').value;
+      const cashReceived = cashReceivedInput !== '' ? Number(cashReceivedInput) : billTotal;
+      const balance = Math.max(0, cashReceived - billTotal);
+
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-CA');
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const billId = 'B' + now.getTime().toString().slice(-6);
+      const receiptLines = [];
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const qty = currentBill[id];
+        const item = state.items.find(function (it) { return it.id === id; });
+        if (!item) continue;
+        const unitPrice = Number(item.price) || 0;
+        receiptLines.push({
+          name: formatItemLabel(item),
+          qty: qty,
+          unitPrice: unitPrice,
+          lineTotal: unitPrice * qty
+        });
+      }
+
+      const shouldShowReceipt = document.getElementById('auto-print-bill-checkbox')
+        ? document.getElementById('auto-print-bill-checkbox').checked
+        : true;
+
+      const createdBill = {
+        id: billId,
+        date: dateStr,
+        time: timeStr,
+        lines: receiptLines,
+        itemsSummary: summaryParts.join(' | '),
+        total: billTotal,
+        cashReceived: cashReceived,
+        balance: balance
+      };
+
+      state.totalCash = (Number(state.totalCash) || 0) + billTotal;
+      state.logs.unshift({
+        time: timeStr,
+        type: 'SALE',
+        detail: summaryParts.join(', ') + ' — Rs. ' + billTotal.toLocaleString()
+      });
+      state.bills.unshift(createdBill);
+
+      saveState();
+      clearCurrentBill();
+      renderAll();
+      showToast('Sale completed (Rs. ' + billTotal.toLocaleString() + ')', 'success');
+
+      if (shouldShowReceipt) {
+        openReceiptModal(createdBill);
+      }
+    }
+
+    function toggleAddItemForm() {
+      document.getElementById('stock-add-item-form').classList.toggle('hidden');
+    }
+
+    function adjustStockByStep(itemId, direction) {
+      if (!isOwnerUnlocked) return openUnlockPinModal('stock');
+      const stepVal = parseInt(document.getElementById('stock-step-input').value, 10);
+      const step = stepVal && stepVal > 0 ? stepVal : 1;
+      const item = state.items.find(function (i) { return i.id === itemId; });
+      if (!item) return;
+
+      const currentStockIn = Number(item.stockIn) || 0;
+      const soldQty = Number(item.sold) || 0;
+      const delta = direction * step;
+      const nextStockIn = currentStockIn + delta;
+
+      if (nextStockIn < soldQty) {
+        showToast('Stock In cannot be less than already sold (' + soldQty + ' pcs)', 'error');
+        return;
+      }
+
+      item.stockIn = nextStockIn;
+      state.logs.unshift({
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: 'STOCK IN',
+        detail: (delta >= 0 ? '+' : '') + delta + ' pcs on ' + formatItemLabel(item)
+      });
+
+      saveState();
+      renderAll();
+      showToast((delta >= 0 ? '+' : '') + delta + ' pcs updated for ' + formatItemLabel(item), 'success');
+    }
+
+    function renderStockStepperList() {
+      const container = document.getElementById('stock-stepper-list');
+      if (!container) return;
+      container.innerHTML = state.items.map(function (item) {
+        const rem = getRemaining(item);
+        return (
+          '<div class="p-3.5 rounded-2xl border border-amber-200 bg-amber-50/40 flex items-center justify-between gap-3">' +
+            '<div>' +
+              '<div class="font-bold text-slate-900">' + escapeHtml(item.nameEn || item.name || '') + '</div>' +
+              (item.nameSi ? '<div class="text-xs font-semibold text-amber-900/80">' + escapeHtml(item.nameSi) + '</div>' : '') +
+              '<div class="text-xs text-slate-500 mt-0.5">Stock In: <b>' + (Number(item.stockIn) || 0) + '</b> · Sold: <b>' + (Number(item.sold) || 0) + '</b> · Left: <b class="text-amber-700">' + rem + '</b></div>' +
+            '</div>' +
+            '<div class="flex items-center gap-2">' +
+              '<button type="button" onclick="adjustStockByStep(\'' + item.id + '\', -1)" class="w-10 h-10 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-lg font-extrabold text-slate-800">-</button>' +
+              '<button type="button" onclick="adjustStockByStep(\'' + item.id + '\', 1)" class="w-10 h-10 rounded-xl bg-amber-600 hover:bg-amber-700 text-lg font-extrabold text-white">+</button>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+    }
+
+    function handleAddItem(e) {
+      e.preventDefault();
+      if (!isOwnerUnlocked) return openUnlockPinModal('stock');
+      const nameEn = document.getElementById('new-item-en').value.trim();
+      const nameSi = document.getElementById('new-item-si').value.trim();
+      const price = parseInt(document.getElementById('new-item-price').value, 10);
+      const opening = parseInt(document.getElementById('new-item-stock').value, 10) || 0;
+      if (!nameEn || !price || price <= 0) return;
+
+      const id = nameEn.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString().slice(-4);
+      state.items.push({ id: id, nameEn: nameEn, nameSi: nameSi, price: price, stockIn: opening, sold: 0 });
+      state.logs.unshift({
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: 'STOCK IN',
+        detail: 'New item added: ' + (nameSi ? nameEn + ' / ' + nameSi : nameEn) + ' (Stock: ' + opening + ' pcs, Rs. ' + price + ')'
+      });
+
+      document.getElementById('new-item-en').value = '';
+      document.getElementById('new-item-si').value = '';
+      document.getElementById('new-item-price').value = '';
+      document.getElementById('new-item-stock').value = '10';
+      saveState();
+      renderAll();
+      showToast('Added item: ' + (nameSi ? nameEn + ' / ' + nameSi : nameEn), 'success');
+    }
+
+    function updateItemDetails(id) {
+      if (!isOwnerUnlocked) return openUnlockPinModal('items');
+      const priceInput = document.getElementById('price-input-' + id);
+      const siInput = document.getElementById('si-input-' + id);
+      const enInput = document.getElementById('en-input-' + id);
+      const newPrice = parseInt(priceInput.value, 10);
+      const item = state.items.find(function (i) { return i.id === id; });
+      if (!item || !newPrice || newPrice <= 0) {
+        showToast('Enter a valid price', 'error');
+        return;
+      }
+      item.nameEn = enInput.value.trim() || item.nameEn;
+      item.nameSi = siInput.value.trim();
+      item.price = newPrice;
+      saveState();
+      renderAll();
+      showToast('Updated item: ' + formatItemLabel(item), 'success');
+    }
+
+    function deleteItemById(id) {
+      if (!isOwnerUnlocked) return openUnlockPinModal('items');
+      const item = state.items.find(function (i) { return i.id === id; });
+      if (!item) return;
+      if (!confirm('Remove "' + formatItemLabel(item) + '" from menu?')) return;
+      state.items = state.items.filter(function (i) { return i.id !== id; });
+      delete currentBill[id];
+      saveState();
+      renderAll();
+      showToast('Item removed', 'info');
+    }
+
+    function renderManageItemsTable() {
+      const tbody = document.getElementById('manage-items-tbody');
+      tbody.innerHTML = state.items.map(function (item) {
+        return (
+          '<tr>' +
+            '<td class="py-2.5 pr-3 space-y-1">' +
+              '<input id="en-input-' + item.id + '" type="text" value="' + escapeHtml(item.nameEn || item.name || '') + '" class="w-40 px-2 py-1 rounded-lg border border-slate-300 text-xs font-semibold block" />' +
+              '<input id="si-input-' + item.id + '" type="text" value="' + escapeHtml(item.nameSi || '') + '" placeholder="සිංහල නම" class="w-40 px-2 py-1 rounded-lg border border-slate-200 text-xs block" />' +
+            '</td>' +
+            '<td class="py-2.5 px-3">' +
+              '<input id="price-input-' + item.id + '" type="number" min="1" value="' + Number(item.price) + '" class="w-24 px-2 py-1 rounded-lg border border-slate-300 text-sm" />' +
+            '</td>' +
+            '<td class="py-2.5 px-3">' + (Number(item.stockIn) || 0) + '</td>' +
+            '<td class="py-2.5 px-3">' + (Number(item.sold) || 0) + '</td>' +
+            '<td class="py-2.5 px-3 font-bold text-amber-700">' + getRemaining(item) + '</td>' +
+            '<td class="py-2.5 pl-3 space-x-1 whitespace-nowrap">' +
+              '<button type="button" onclick="updateItemDetails(\'' + item.id + '\')" class="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold">Save</button>' +
+              '<button type="button" onclick="deleteItemById(\'' + item.id + '\')" class="px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-semibold">Delete</button>' +
+            '</td>' +
+          '</tr>'
+        );
+      }).join('');
+    }
+
+    function renderLogs() {
+      const container = document.getElementById('logs-list');
+      document.getElementById('log-count-badge').textContent = state.logs.length + ' entries';
+      if (state.logs.length === 0) {
+        container.innerHTML = '<p class="text-slate-400 text-center py-6">No logs recorded yet today</p>';
+        return;
+      }
+      container.innerHTML = state.logs.map(function (log) {
+        return (
+          '<div class="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200/70">' +
+            '<div>' +
+              '<span class="text-xs font-bold px-2 py-0.5 rounded-md mr-2 ' +
+                (log.type === 'SALE' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800') +
+              '">' + escapeHtml(log.type) + '</span>' +
+              '<span class="font-medium text-slate-800">' + escapeHtml(log.detail) + '</span>' +
+            '</div>' +
+            '<span class="text-xs text-slate-500 whitespace-nowrap">' + escapeHtml(log.time) + '</span>' +
+          '</div>'
+        );
+      }).join('');
+    }
+
+    function deleteBillById(billId) {
+      if (!isOwnerUnlocked) return openUnlockPinModal('history');
+      const target = (state.bills || []).find(function (b) { return b.id === billId; });
+      if (!target) return;
+      if (!confirm('Delete bill ' + target.id + ' (Rs. ' + Number(target.total || 0).toLocaleString() + ')?')) return;
+      state.bills = state.bills.filter(function (b) { return b.id !== billId; });
+      saveState();
+      renderBillsHistory();
+      showToast('Deleted bill ' + target.id, 'info');
+    }
+
+    function clearAllPastBills() {
+      if (!isOwnerUnlocked) return openUnlockPinModal('history');
+      if (!state.bills || state.bills.length === 0) {
+        showToast('No bills to clear', 'info');
+        return;
+      }
+      if (!confirm('Delete all ' + state.bills.length + ' saved bills from history?')) return;
+      state.bills = [];
+      saveState();
+      renderBillsHistory();
+      showToast('Cleared all past bills', 'info');
+    }
+
+    function renderBillsHistory() {
+      if (!isOwnerUnlocked) return;
+      const tbody = document.getElementById('bills-history-tbody');
+      if (!state.bills || state.bills.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-400">No completed bills recorded yet</td></tr>';
+      } else {
+        tbody.innerHTML = state.bills.map(function (b) {
+          return (
+            '<tr>' +
+              '<td class="py-2.5 pr-3 whitespace-nowrap text-xs text-slate-600">' + escapeHtml(b.date) + ' · <b>' + escapeHtml(b.time) + '</b></td>' +
+              '<td class="py-2.5 px-3 font-mono text-xs font-semibold">' + escapeHtml(b.id) + '</td>' +
+              '<td class="py-2.5 px-3 text-slate-800">' + escapeHtml(b.itemsSummary) + '</td>' +
+              '<td class="py-2.5 px-3 font-bold text-emerald-700 whitespace-nowrap">Rs. ' + Number(b.total || 0).toLocaleString() + '</td>' +
+              '<td class="py-2.5 px-3 text-xs text-slate-600 whitespace-nowrap">Recv: Rs. ' + Number(b.cashReceived || 0).toLocaleString() + ' / Bal: Rs. ' + Number(b.balance || 0).toLocaleString() + '</td>' +
+              '<td class="py-2.5 pl-3 whitespace-nowrap space-x-1">' +
+                '<button type="button" onclick="reprintBillById(\'' + escapeHtml(b.id) + '\')" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold">Print</button>' +
+                '<button type="button" onclick="deleteBillById(\'' + escapeHtml(b.id) + '\')" class="px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-semibold">Delete</button>' +
+              '</td>' +
+            '</tr>'
+          );
+        }).join('');
+      }
+
+      const archContainer = document.getElementById('day-archives-list');
+      if (!state.dayArchives || state.dayArchives.length === 0) {
+        archContainer.innerHTML = '<p class="text-slate-400 text-center py-4">No closed day summaries yet (created when you click Start New Day)</p>';
+      } else {
+        archContainer.innerHTML = state.dayArchives.map(function (d) {
+          return (
+            '<div class="p-3 rounded-xl bg-amber-50/70 border border-amber-200/80 flex flex-wrap items-center justify-between gap-2">' +
+              '<div>' +
+                '<span class="font-bold text-slate-900">' + escapeHtml(d.closedDate) + '</span>' +
+                '<span class="text-xs text-slate-500 ml-2">(' + escapeHtml(d.closedTime) + ')</span>' +
+                '<div class="text-xs text-slate-700 mt-0.5">Bills: <b>' + d.billCount + '</b> · Sold: <b>' + d.soldQty + ' pcs</b></div>' +
+              '</div>' +
+              '<div class="font-extrabold text-emerald-700">Total Cash: Rs. ' + Number(d.totalCash || 0).toLocaleString() + '</div>' +
+            '</div>'
+          );
+        }).join('');
+      }
+    }
+
+    function downloadHistoryCSV() {
+      if (!isOwnerUnlocked) return openUnlockPinModal('history');
+      if (!state.bills || state.bills.length === 0) {
+        showToast('No bills available to download', 'error');
+        return;
+      }
+      const rows = [
+        ['Date', 'Time', 'Bill ID', 'Items', 'Bill Total (Rs.)', 'Cash Received (Rs.)', 'Balance (Rs.)']
+      ];
+      state.bills.forEach(function (b) {
+        rows.push([
+          b.date || '',
+          b.time || '',
+          b.id || '',
+          b.itemsSummary || '',
+          Number(b.total || 0),
+          Number(b.cashReceived || 0),
+          Number(b.balance || 0)
+        ]);
+      });
+
+      const csvContent = rows.map(function (r) {
+        return r.map(function (cell) {
+          const safe = String(cell).replace(/"/g, '""');
+          return '"' + safe + '"';
+        }).join(',');
+      }).join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'bakery_bills_history_' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Downloaded bills history CSV', 'success');
+    }
+
+    function handleStartNewDay() {
+      if (!isOwnerUnlocked) return openUnlockPinModal(null);
+      if (!confirm("Start a new day? Today's summary will be saved to Past Bills History, Total Cash resets to Rs. 0, and all item stock counts reset to 0 pcs.")) {
+        return;
+      }
+
+      let totalSoldToday = 0;
+      state.items.forEach(function (it) { totalSoldToday += Number(it.sold) || 0; });
+
+      const now = new Date();
+      state.dayArchives.unshift({
+        closedDate: now.toLocaleDateString('en-CA'),
+        closedTime: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        totalCash: Number(state.totalCash) || 0,
+        soldQty: totalSoldToday,
+        billCount: state.bills.filter(function (b) { return b.date === now.toLocaleDateString('en-CA'); }).length
+      });
+
+      state.items = state.items.map(function (item) {
+        return Object.assign({}, item, {
+          stockIn: 0,
+          sold: 0
+        });
+      });
+      state.totalCash = 0;
+      state.logs = [];
+      currentBill = {};
+      saveState();
+      renderAll();
+      showToast('New day started — all stock reset to 0 pcs', 'success');
+    }
+
+
+    function openReceiptModal(bill) {
+      if (!bill) return;
+      document.getElementById('rcpt-meta').innerHTML =
+        'Bill #' + escapeHtml(bill.id || '') + ' &middot; ' + escapeHtml(bill.date || '') + ' ' + escapeHtml(bill.time || '');
+
+      const linesEl = document.getElementById('rcpt-lines');
+      if (Array.isArray(bill.lines) && bill.lines.length > 0) {
+        linesEl.innerHTML = bill.lines.map(function (ln) {
+          return (
+            '<div>' +
+              '<div class="font-bold text-slate-900">' + escapeHtml(ln.name) + '</div>' +
+              '<div class="flex justify-between text-[11px] text-slate-700">' +
+                '<span>' + Number(ln.qty) + ' x Rs. ' + Number(ln.unitPrice).toLocaleString() + '</span>' +
+                '<span class="font-semibold">Rs. ' + Number(ln.lineTotal).toLocaleString() + '</span>' +
+              '</div>' +
+            '</div>'
+          );
+        }).join('');
+      } else {
+        const parts = String(bill.itemsSummary || '').split(' | ').filter(Boolean);
+        linesEl.innerHTML = parts.map(function (p) {
+          return '<div class="font-semibold text-slate-900">' + escapeHtml(p) + '</div>';
+        }).join('');
+      }
+
+      document.getElementById('rcpt-total').textContent = 'Rs. ' + Number(bill.total || 0).toLocaleString();
+      document.getElementById('rcpt-cash').textContent = 'Rs. ' + Number(bill.cashReceived || 0).toLocaleString();
+      document.getElementById('rcpt-balance').textContent = 'Rs. ' + Number(bill.balance || 0).toLocaleString();
+
+      const modal = document.getElementById('receipt-print-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeReceiptModal() {
+      const modal = document.getElementById('receipt-print-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function triggerReceiptPrint() {
+      window.print();
+    }
+
+    function reprintBillById(billId) {
+      if (!isOwnerUnlocked) return openUnlockPinModal('history');
+      const target = (state.bills || []).find(function (b) { return b.id === billId; });
+      if (!target) return;
+      openReceiptModal(target);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function renderAll() {
+      renderHeaderAndKPIs();
+      renderSaleGrid();
+      renderBill();
+      renderStockStepperList();
+      renderManageItemsTable();
+      renderLogs();
+      renderBillsHistory();
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>
